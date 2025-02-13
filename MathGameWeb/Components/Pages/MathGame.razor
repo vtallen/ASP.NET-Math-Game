@@ -1,0 +1,192 @@
+﻿@page "/"
+@using global::MathGame
+@rendermode InteractiveServer
+
+<PageTitle>Math Game</PageTitle>
+<h1>Math Game</h1>
+@if (IsStartGameVisible)
+{
+    <form method="post" @onsubmit="StartGameHandler" @formname="game-parameters">
+        <AntiforgeryToken/>
+        <div class="form-group">
+            <label>Maximum allowed operand</label>
+            <input @bind="Model.MaxNumber" type="number" class="form-control" id="maxAllowedOperand" placeholder="Enter a number"/>
+        </div>
+        <div class="form-group">
+            <label>Number of questions</label>
+            <input @bind="Model.NumQuestions" type="number" class="form-control" id="numberQuestions" placeholder="Enter a number"/>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Play</button>
+    </form>
+}
+else
+{
+    <div class="container d-flex flex-column align-items-center text-center">
+        <div class="row">
+            <button type="button" class="btn btn-primary" @onclick="RestartGame">Restart Game</button>
+        </div>
+        @if (!Model.IsGameOver)
+        {
+            @if (Model.IsIncorrect)
+            {
+                <div class="row align-items-center">
+                    <h2>Incorrect, try again!</h2>
+                </div>
+            }
+            <div class="row align-items-center pt-2">
+                <div class="col-auto">
+                    <h2>@Model.GetProblem()?.ToString()</h2>
+                </div>
+                <div class="col-auto">
+                    <form method="post" @onsubmit="Model.CheckAnswer" formname="answer-submit">
+                        <input type="number" placeholder="Answer" @bind="Model.UserSolution" autofocus/>
+                    </form>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="container d-flex flex-column align-items-center text-center">
+                <div class="row align-items-center">
+                    <h2>You got @Model.CorrectAnswers answers correct on the first try and provided @Model.FailedAnswers incorrect answers.</h2> 
+                </div> 
+            </div> 
+        }
+    </div>
+}
+
+@code {
+
+    public MathGame()
+    {
+        Model = new Game(StateHasChanged);
+    }
+
+    [SupplyParameterFromForm]
+    private Game Model { get; set; }
+
+    private bool IsStartGameVisible { get; set; } = true;
+
+    private void StartGameHandler()
+    {
+        IsStartGameVisible = false;
+        this.Model.NewGame();
+        StateHasChanged();
+    }
+
+    private void RestartGame()
+    {
+        Console.WriteLine("restart");
+        IsStartGameVisible = true;
+        Model = new Game(StateHasChanged); // Reset the model
+        StateHasChanged();
+    }
+
+    protected override void OnInitialized()
+    {
+        Model ??= new Game(StateHasChanged);
+    }
+
+    public class Game
+    {
+        public int? MaxNumber { get; set; }
+        public int? NumQuestions { get; set; }
+
+        public int? UserSolution { get; set; }
+        public bool IsIncorrect { get; set; } = false;
+        public bool IsGameOver { get; set;  } = false;
+
+        public int CorrectAnswers { get; set; } = 0;
+        public int FailedAnswers { get; set; } = 0;
+
+        private readonly Action _stateHasChangedAction;
+        private int _questionsGenerated = 0;
+        
+        private ProblemGenerator? _problemGenerator;
+        private MathProblem? _currentProblem;
+
+        public Game(Action stateHasChangedCallback)
+        {
+            this._stateHasChangedAction = stateHasChangedCallback;
+        }
+
+        public void NewGame()
+        {
+            if (this.MaxNumber != null && this.MaxNumber != 0)
+            {
+                this._problemGenerator = new ProblemGenerator((int)this.MaxNumber, '+', '-', '*', '/');
+                this.IsGameOver = false;
+                this.IsIncorrect = false;
+                this.UserSolution = null;
+                this.FailedAnswers = 0;
+                this.CorrectAnswers = 0;
+                this.NextProblem();
+            }
+            else
+            {
+                throw new InvalidCastException("MaxNumber member of Game was uninitialized");
+            }
+        }
+
+        public void NextProblem()
+        {
+            if (this._problemGenerator != null)
+            {
+                if (this._questionsGenerated != this.NumQuestions)
+                {
+                    this._questionsGenerated++;
+                    this._currentProblem = _problemGenerator.Generate();
+                    this.UserSolution = null;
+                    this.IsIncorrect = false;
+                }
+                else
+                {
+                    this.IsGameOver = true;
+                }
+            }
+            else
+            {
+                throw new InvalidOperationException("NextProblem called before _problemGenerator was initalized");
+            }
+        }
+
+        public ref readonly MathProblem? GetProblem()
+        {
+            return ref this._currentProblem;
+        }
+
+        public void CheckAnswer()
+        {
+            if (this._currentProblem == null) throw new InvalidOperationException("_currentProblem is null, cannot CheckAnswer()");
+            
+            if (this.UserSolution == this._currentProblem.Solution())
+            {
+                if (!this.IsIncorrect) this.CorrectAnswers = this.CorrectAnswers + 1;
+                this.IsIncorrect = false;
+                
+                if (this._questionsGenerated == this.NumQuestions)
+                {
+                    this.IsGameOver = true;
+                    _stateHasChangedAction?.Invoke();
+                }
+                else
+                {
+                    this.NextProblem();
+                }
+
+                
+            }
+            else
+            {
+                this.IsIncorrect = true;
+                this.FailedAnswers = FailedAnswers + 1;
+                _stateHasChangedAction?.Invoke();
+            }
+
+        }
+        
+        
+
+    }
+}
